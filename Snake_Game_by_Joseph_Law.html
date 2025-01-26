@@ -1,1 +1,365 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake Game</title>
+    <link rel="shortcut icon" href="https://repository-images.githubusercontent.com/386646243/8fb49f51-e25c-4983-9b37-e0d2acff957c" type="image/x-icon">
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: #1a1a1a; 
+            font-family: 'Press Start 2P', cursive;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            font-family: 'Press Start 2P', cursive;
+            color: white;
+        }
+
+        #loading-text {
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        #mini-loading-text {
+            margin-bottom: 20px;
+            font-size: 15px;
+        }
+        #loading-bar {
+            width: 300px;
+            height: 30px;
+            border: 2px solid #fff;
+            margin: 20px;
+        }
+        #loading-progress {
+            width: 0%;
+            height: 100%;
+            background: #2ecc71;
+            transition: width 0.3s ease;
+        }
+        #game-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #ui {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            color: #fff;
+            z-index: 100;
+            text-shadow: 2px 2px #000;
+        }
+        #replay {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 15px 30px;
+            background: #ff4757;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            display: none;
+            font-family: 'Press Start 2P', cursive;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading-screen">
+        <div id="loading-text">LOADING...</div>
+        <div id="loading-bar">
+            <div id="loading-progress"></div>
+        </div>
+        <div id="mini-loading-text">Snake Game by Joseph Law</div>
+    </div>
+    <div id="game-container">
+        <div id="ui">
+            <div>SCORE: <span id="score">0</span></div>
+        </div>
+        <canvas id="game"></canvas>
+        <button id="replay">PLAY AGAIN (SPACE)</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const replayBtn = document.getElementById('replay');
+        const loadingScreen = document.getElementById('loading-screen');
+        const loadingProgress = document.getElementById('loading-progress');
+
+        // Game settings
+        const CELL_SIZE = 40;
+        let GRID_COLS = 0;
+        let GRID_ROWS = 0;
+        let score = 0, snake = [], food = null, dir = { x: 0, y: 0 };
+        let gameLoop = null;
+        let gameRunning = false;
+
+        // Fruit configuration
+        const FRUITS = {
+    // Common (appear frequently)
+    apple: {
+        img: new Image(),
+        url: 'https://cdn-icons-png.flaticon.com/512/415/415733.png',
+        color: '#ff3838'
+    },
+    banana: {
+        img: new Image(),
+        url: 'https://cdn-icons-png.flaticon.com/512/135/135728.png',
+        color: '#fff200'
+    },
+    cherry: {
+        img: new Image(),
+        url: 'https://cdn-icons-png.flaticon.com/512/135/135711.png',
+        color: '#ff0000'
+    },
+    grape: {
+        img: new Image(),
+        url: 'https://cdn-icons-png.flaticon.com/512/135/135701.png',
+        color: '#a45bff'
+    },
+
+    // Uncommon
+    strawberry: {
+        img: new Image(),
+        url: 'https://cdn-icons-png.flaticon.com/512/135/135748.png',
+        color: '#ff2d2d'
+    },
+    kiwi: {
+        img: new Image(),
+        url: 'https://cdn-icons-png.flaticon.com/512/135/135717.png',
+        color: '#8bc34a'
+    },
+
+    // Rare
+    mango: {
+        img: new Image(),
+        url: 'https://cdn-icons-png.flaticon.com/512/135/135754.png',
+        color: '#ffb300'
+    },
+    pineapple: {
+        img: new Image(),
+        url: 'https://cdn-icons-png.flaticon.com/512/135/135773.png',
+        color: '#ffee58'
+    }
+};
+
+// Modified spawnFood function with weighted randomness
+function spawnFood() {
+    const MARGIN = 2;
+    const fruitWeights = {
+        apple: 15,
+        banana: 15,
+        cherry: 15,
+        grape: 15,
+        strawberry: 10,
+        kiwi: 10,
+        mango: 5,
+        pineapple: 5
+    };
+
+    do {
+        const totalWeight = Object.values(fruitWeights).reduce((a,b) => a + b);
+        let random = Math.random() * totalWeight;
+        let selectedFruit = 'apple';
+
+        for(const [fruit, weight] of Object.entries(fruitWeights)) {
+            if(random < weight) {
+                selectedFruit = fruit;
+                break;
+            }
+            random -= weight;
+        }
+
+        food = {
+            x: MARGIN + Math.floor(Math.random() * (GRID_COLS - MARGIN * 2)),
+            y: MARGIN + Math.floor(Math.random() * (GRID_ROWS - MARGIN * 2)),
+            type: selectedFruit
+        };
+    } while(snake.some(seg => seg.x === food.x && seg.y === food.y));
+}
+
+        // Initialize game
+        function init() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            GRID_COLS = Math.floor(canvas.width / CELL_SIZE);
+            GRID_ROWS = Math.floor(canvas.height / CELL_SIZE);
+            ctx.imageSmoothingEnabled = false;
+        }
+
+        // Loading system
+        function loadAssets() {
+            const totalAssets = Object.keys(FRUITS).length;
+            let loadedAssets = 0;
+            
+            return new Promise((resolve, reject) => {
+                Object.values(FRUITS).forEach(fruit => {
+                    fruit.img.onload = () => {
+                        loadedAssets++;
+                        loadingProgress.style.width = `${(loadedAssets/totalAssets)*100}%`;
+                        if(loadedAssets === totalAssets) {
+                            setTimeout(() => {
+                                loadingScreen.style.display = 'none';
+                                resolve();
+                            }, 500);
+                        }
+                    };
+                    fruit.img.onerror = () => {
+                        console.error(`Failed to load ${fruit.url}`);
+                        fruit.img = null;
+                        loadedAssets++;
+                        if(loadedAssets === totalAssets) resolve();
+                    };
+                    fruit.img.src = fruit.url;
+                });
+            });
+        }
+
+        // Game functions
+        function start() {
+            snake = [{x: Math.floor(GRID_COLS/2), y: Math.floor(GRID_ROWS/2)}];
+            dir = { x: 1, y: 0 };
+            score = 0;
+            scoreEl.textContent = '0';
+            replayBtn.style.display = 'none';
+            gameRunning = true;
+            spawnFood();
+            if(gameLoop) clearInterval(gameLoop);
+            gameLoop = setInterval(update, 150);
+        }
+
+        function update() {
+            if(!gameRunning) return;
+
+            const head = {
+                x: snake[0].x + dir.x,
+                y: snake[0].y + dir.y
+            };
+            
+            // Boundary check
+            if(head.x < 0 || head.x >= GRID_COLS || head.y < 0 || head.y >= GRID_ROWS) {
+                return gameOver();
+            }
+
+            // Self-collision check
+            if(snake.some((seg, index) => index !== 0 && seg.x === head.x && seg.y === head.y)) {
+                return gameOver();
+            }
+
+            snake.unshift(head);
+
+            // Food collision
+            if(head.x === food.x && head.y === food.y) {
+                score += 10;
+                scoreEl.textContent = score;
+                spawnFood();
+            } else {
+                snake.pop();
+            }
+
+            draw();
+        }
+
+        function draw() {
+            // Clear canvas
+            ctx.fillStyle = '#1a1a1a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw snake
+            snake.forEach((seg, i) => {
+                ctx.fillStyle = i === 0 ? '#ff4757' : '#2ed573';
+                ctx.fillRect(
+                    seg.x * CELL_SIZE + 2,
+                    seg.y * CELL_SIZE + 2,
+                    CELL_SIZE - 4,
+                    CELL_SIZE - 4
+                );
+            });
+
+            // Draw food
+            if(FRUITS[food.type].img) {
+                ctx.drawImage(
+                    FRUITS[food.type].img,
+                    food.x * CELL_SIZE + 2,
+                    food.y * CELL_SIZE + 2,
+                    CELL_SIZE - 4,
+                    CELL_SIZE - 4
+                );
+            } else {
+                ctx.fillStyle = FRUITS[food.type].color;
+                ctx.fillRect(
+                    food.x * CELL_SIZE + 2,
+                    food.y * CELL_SIZE + 2,
+                    CELL_SIZE - 4,
+                    CELL_SIZE - 4
+                );
+            }
+        }
+
+        function spawnFood() {
+            const MARGIN = 2; // Cells from edge
+            do {
+                food = {
+                    x: MARGIN + Math.floor(Math.random() * (GRID_COLS - MARGIN * 2)),
+                    y: MARGIN + Math.floor(Math.random() * (GRID_ROWS - MARGIN * 2)),
+                    type: Object.keys(FRUITS)[Math.floor(Math.random() * Object.keys(FRUITS).length)]
+                };
+            } while(snake.some(seg => seg.x === food.x && seg.y === food.y));
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            clearInterval(gameLoop);
+            replayBtn.style.display = 'block';
+        }
+
+        // Controls
+        document.addEventListener('keydown', e => {
+            if(!gameRunning && e.key === ' ') return start();
+            
+            switch(e.key) {
+                case 'ArrowUp':
+                    if(dir.y !== 1) dir = { x: 0, y: -1 };
+                    break;
+                case 'ArrowDown':
+                    if(dir.y !== -1) dir = { x: 0, y: 1 };
+                    break;
+                case 'ArrowLeft':
+                    if(dir.x !== 1) dir = { x: -1, y: 0 };
+                    break;
+                case 'ArrowRight':
+                    if(dir.x !== -1) dir = { x: 1, y: 0 };
+                    break;
+            }
+        });
+
+        // Initialize game
+        init();
+        loadAssets().then(start).catch(console.error);
+        window.addEventListener('resize', init);
+    </script>
+</body>
+</html>
